@@ -879,6 +879,7 @@ public class InvokeHTTP extends AbstractProcessor {
 
                 boolean outputBodyToRequestAttribute = (!isSuccess(statusCode) || putToAttribute) && requestFlowFile != null;
                 boolean outputBodyToResponseContent = (isSuccess(statusCode) && !putToAttribute) || context.getProperty(PROP_OUTPUT_RESPONSE_REGARDLESS).asBoolean();
+                boolean outputBodyToResponseAttribute = (isSuccess(statusCode) && putToAttribute) || context.getProperty(PROP_OUTPUT_RESPONSE_REGARDLESS).asBoolean();
                 ResponseBody responseBody = responseHttp.body();
                 boolean bodyExists = responseBody != null && !context.getProperty(IGNORE_RESPONSE_CONTENT).asBoolean();
 
@@ -892,7 +893,7 @@ public class InvokeHTTP extends AbstractProcessor {
                         teeInputStream = new TeeInputStream(responseBodyStream, outputStreamToRequestAttribute);
                     }
 
-                    if (outputBodyToResponseContent) {
+                    if (outputBodyToResponseContent || outputBodyToResponseAttribute) {
                         /*
                          * If successful and putting to response flowfile, store the response body as the flowfile payload
                          * we include additional flowfile attributes including the response headers and the status codes.
@@ -919,10 +920,17 @@ public class InvokeHTTP extends AbstractProcessor {
                             if (responseBody.contentType() != null) {
                                 responseFlowFile = session.putAttribute(responseFlowFile, CoreAttributes.MIME_TYPE.key(), responseBody.contentType().toString());
                             }
-                            if (teeInputStream != null) {
-                                responseFlowFile = session.importFrom(teeInputStream, responseFlowFile);
-                            } else {
-                                responseFlowFile = session.importFrom(responseBodyStream, responseFlowFile);
+                            if (outputBodyToResponseContent)
+                            {
+                                    if (teeInputStream != null) {
+                                        responseFlowFile = session.importFrom(teeInputStream, responseFlowFile);
+                                    } else {
+                                        responseFlowFile = session.importFrom(responseBodyStream, responseFlowFile);
+                                    }
+                            } else if (outputBodyToResponseAttribute) 
+                            {
+                                    String attributeKey = context.getProperty(PROP_PUT_OUTPUT_IN_ATTRIBUTE).evaluateAttributeExpressions(requestFlowFile).getValue();
+                                    responseFlowFile = session.putAttribute(responseFlowFile, attributeKey, responseBody.string());
                             }
 
                             // emit provenance event
